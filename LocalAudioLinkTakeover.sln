@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LocalAudioLinkTakeover", "LocalAudioLinkTakeover.csproj", "{488EDE9E-6AA1-40A9-A5C0-C447F44FC321}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{488EDE9E-6AA1-40A9-A5C0-C447F44FC321}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{488EDE9E-6AA1-40A9-A5C0-C447F44FC321}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{488EDE9E-6AA1-40A9-A5C0-C447F44FC321}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{488EDE9E-6AA1-40A9-A5C0-C447F44FC321}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {F565BB49-E34F-42AC-8A82-B91B347E6BBD}
+	EndGlobalSection
+EndGlobal
