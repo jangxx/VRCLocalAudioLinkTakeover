@@ -36,6 +36,9 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="CSCore, Version=1.2.1.2, Culture=neutral, PublicKeyToken=5a08f2b6f4415dea, processorArchitecture=MSIL">
+      <HintPath>packages\CSCore.1.2.1.2\lib\net35-client\CSCore.dll</HintPath>
+    </Reference>
     <Reference Include="Il2Cppmscorlib, Version=4.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
       <HintPath>..\..\..\..\..\Program Files (x86)\Steam\steamapps\common\VRChat\MelonLoader\Managed\Il2Cppmscorlib.dll</HintPath>
@@ -54,10 +57,6 @@
     </Reference>
     <Reference Include="MelonLoader">
       <HintPath>..\..\..\..\..\Program Files (x86)\Steam\steamapps\common\VRChat\MelonLoader\MelonLoader.dll</HintPath>
-    </Reference>
-    <Reference Include="NAudio, Version=1.10.0.0, Culture=neutral, processorArchitecture=MSIL">
-      <SpecificVersion>False</SpecificVersion>
-      <HintPath>Libs\NAudio.dll</HintPath>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
@@ -107,12 +106,8 @@
   <ItemGroup>
     <Compile Include="AudioInjectionFilter.cs" />
     <Compile Include="AudioLinkTakeoverMain.cs" />
-    <Compile Include="ConfigurableWaveInProvider.cs" />
     <Compile Include="PassthroughWaveProvider.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-  </ItemGroup>
-  <ItemGroup>
-    <Content Include="Libs\NAudio.dll" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
@@ -126,6 +121,6 @@
   </Target>
   <PropertyGroup>
     <PostBuildEvent>mkdir "$(ProjectDir)dist\VRCLocalAudioLinkTakeover\"
-$(ILMergeConsolePath) /out:"$(ProjectDir)dist\VRCLocalAudioLinkTakeover\LocalAudioLinkTakeover.dll" "$(TargetDir)LocalAudioLinkTakeover.dll" "$(TargetDir)NAudio.dll"</PostBuildEvent>
+$(ILMergeConsolePath) /out:"$(ProjectDir)dist\VRCLocalAudioLinkTakeover\LocalAudioLinkTakeover.dll" "$(TargetDir)LocalAudioLinkTakeover.dll" "$(TargetDir)CSCore.dll"</PostBuildEvent>
   </PropertyGroup>
 </Project>

@@ -5,7 +5,7 @@ using System.Text;
 using System.Threading.Tasks;
 using MelonLoader;
 using VRC;
-using NAudio.Wave;
+using CSCore;
 using UnityEngine;
 using UnhollowerRuntimeLib;
 
@@ -16,9 +16,8 @@ namespace LocalAudioLinkTakeover
         private AudioSource emptyAudioSource = null;
         private PassthroughWaveProvider outputWaveProvider = null;
 
-        private WasapiLoopbackCapture na_captureDevice = null;
-        private MediaFoundationResampler na_resampler = null;
-        private ConfigurableWaveInProvider na_recorder = null;
+        private CSCore.SoundIn.WasapiLoopbackCapture cs_captureDevice = null;
+        private CSCore.Streams.SoundInSource cs_recorder = null;
 
         public AudioLinkTakeoverMain()
         {
@@ -30,6 +29,8 @@ namespace LocalAudioLinkTakeover
 
             this.outputWaveProvider = new PassthroughWaveProvider();
 
+            
+
             SetupCapture();
         }
 
@@ -37,30 +38,23 @@ namespace LocalAudioLinkTakeover
         {
             this.outputWaveProvider.ClearInput();
 
-            if (this.na_captureDevice != null)
+            if (this.cs_captureDevice != null)
             {
-                this.na_captureDevice.StopRecording();
-                this.na_captureDevice.Dispose();
+                this.cs_captureDevice.Stop();
+                this.cs_captureDevice.Dispose();
             }
 
-            if (this.na_resampler != null)
+            if (this.cs_recorder != null)
             {
-                this.na_resampler.Dispose();
-                this.na_resampler = null;
+                this.cs_recorder = null;
             }
 
-            if (this.na_recorder != null)
-            {
-                this.na_recorder = null;
-            }
+            this.cs_captureDevice = new CSCore.SoundIn.WasapiLoopbackCapture(50, new WaveFormat(48000, 32, 2, AudioEncoding.IeeeFloat));
+            this.cs_captureDevice.Initialize();
 
-            this.na_captureDevice = new WasapiLoopbackCapture();
-            this.na_recorder = new ConfigurableWaveInProvider(this.na_captureDevice);
-            this.na_recorder.BufferLength = this.na_recorder.WaveFormat.BitsPerSample * this.na_recorder.WaveFormat.SampleRate; // take one eight of the sample rate as buffer size
+            this.cs_recorder = new CSCore.Streams.SoundInSource(this.cs_captureDevice);
 
-            this.na_resampler = new MediaFoundationResampler(this.na_recorder, WaveFormat.CreateIeeeFloatWaveFormat(48000, 2));
-
-            this.outputWaveProvider.SetInput(this.na_resampler);
+            this.outputWaveProvider.SetInput(this.cs_recorder);
         }
 
         //public override void OnUpdate()

@@ -3,23 +3,23 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using NAudio.Wave;
+using CSCore;
 
 namespace LocalAudioLinkTakeover
 {
-    internal class PassthroughWaveProvider : IWaveProvider
+    internal class PassthroughWaveProvider : IReadableAudioSource<float>
     {
         private WaveFormat waveFormat;
         private int bytesPerSample;
-        private IWaveProvider input = null;
+        private IReadableAudioSource<byte> input = null;
 
         public PassthroughWaveProvider()
         {
-            this.waveFormat = WaveFormat.CreateIeeeFloatWaveFormat(48000, 2);
+            this.waveFormat = new WaveFormat(48000, 32, 2, AudioEncoding.IeeeFloat);
             this.bytesPerSample = 4;
         }
 
-        public void SetInput(IWaveProvider input)
+        public void SetInput(IReadableAudioSource<byte> input)
         {
             lock(this.input)
             {
@@ -40,13 +40,8 @@ namespace LocalAudioLinkTakeover
             }
         }
 
-        public int Read(byte[] buffer, int offset, int count)
+        unsafe public int Read(float[] buffer, int offset, int count)
         {
-            if (count % bytesPerSample != 0)
-            {
-                throw new ArgumentException("Must read an whole number of samples", "count");
-            }
-
             // blank the buffer
             Array.Clear(buffer, offset, count);
 
@@ -55,17 +50,37 @@ namespace LocalAudioLinkTakeover
             {
                 if (input != null)
                 {
-                    input.Read(buffer, 0, count);
+                    byte[] readBuffer = new byte[count * 4];
+                    int bytesRead = input.Read(readBuffer, 0, count * 4);
+
+                    fixed (byte* p = readBuffer)
+                    {
+                        float* value = (float*)p;
+                        for (int i = 0; i < bytesRead/4; i++)
+                        {
+                            buffer[i] = *(value + i);
+                        }
+                    }
                 }
             }
 
             return count;
         }
 
+        public void Dispose()
+        {
+            // do nothing
+        }
 
         public WaveFormat WaveFormat
         {
             get { return this.waveFormat; }
         }
+
+        public bool CanSeek => false;
+
+        public long Position { get => 0; set { } }
+
+        public long Length => 0;
     }
 }
