@@ -14,13 +14,17 @@ namespace LocalAudioLinkTakeover
     {
         private MelonLogger.Instance LoggerInstance = new MelonLogger.Instance("Local_AudioLink_Takeover::AudioInjectionFilter");
 
-        private const int SAMPLE_RATE = 48000;
+        private PassthroughWaveProvider waveProvider;
 
-        private int sample = 0;
+        private const int SAMPLE_RATE = 48000;
 
         public AudioInjectionFilter(IntPtr obj0) : base(obj0)
         {
+        }
 
+        public void SetInputProvider(PassthroughWaveProvider provider)
+        {
+            this.waveProvider = provider;
         }
 
         public void Start()
@@ -28,15 +32,19 @@ namespace LocalAudioLinkTakeover
             LoggerInstance.Msg("AudioInjectionFilter was started");
         }
 
-        public void OnAudioFilterRead(Il2CppStructArray<float> data, int channels)
+        unsafe public void OnAudioFilterRead(Il2CppStructArray<float> data, int channels)
         {
             //LoggerInstance.Msg("reading " + data.Length + " samples with " + channels + " channels");
-            for (int i = 0; i < data.Count; i++)
-            {
-                float x = (float)this.sample / (float)SAMPLE_RATE;
-                data[i] = (float)Math.Sin(x * 440 * Math.PI * 2) * 0.7f;
+            byte[] readBuffer = new byte[data.Length * 4];
+            this.waveProvider.Read(readBuffer, 0, readBuffer.Length);
 
-                sample = (sample + 1) % SAMPLE_RATE;
+            fixed (byte* buffer = readBuffer)
+            {
+                for (int i = 0; i < data.Length; i++) {
+                    // do some fast unsafe casts to get our float values back
+                    float* value = (float*)(buffer + i * 4);
+                    data[i] = *value;
+                }
             }
         }
     }
