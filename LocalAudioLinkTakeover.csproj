@@ -108,6 +108,7 @@
     <Compile Include="AudioLinkTakeoverMain.cs" />
     <Compile Include="PassthroughWaveProvider.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="QuickMenuSettings.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />

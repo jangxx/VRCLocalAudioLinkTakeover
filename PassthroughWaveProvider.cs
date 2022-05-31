@@ -4,14 +4,25 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using CSCore;
+using MelonLoader;
 
 namespace LocalAudioLinkTakeover
 {
     internal class PassthroughWaveProvider : IReadableAudioSource<float>
     {
+        private MelonLogger.Instance LoggerInstance = new MelonLogger.Instance("Local_AudioLink_Takeover::PassthroughWaveProvider");
+
         private WaveFormat waveFormat;
         private int bytesPerSample;
         private IReadableAudioSource<byte> input = null;
+        private object inputLock = new object();
+
+        private float currentBoost = 1.0f;
+        private long samplesSinceLastClip = 0;
+
+        public float MaxBoost { get; set; } = 15.0f;
+        public float MinBoost { get; set; } = 1.0f;
+        public float BoostIncreaseSpeed { get; set; } = 0.3f;
 
         public PassthroughWaveProvider()
         {
@@ -21,7 +32,7 @@ namespace LocalAudioLinkTakeover
 
         public void SetInput(IReadableAudioSource<byte> input)
         {
-            lock(this.input)
+            lock(this.inputLock)
             {
                 this.input = input;
             }
@@ -29,12 +40,7 @@ namespace LocalAudioLinkTakeover
 
         public void ClearInput()
         {
-            if (this.input == null)
-            {
-                return;
-            }
-
-            lock (this.input)
+            lock (this.inputLock)
             {
                 this.input = null;
             }
@@ -46,21 +52,43 @@ namespace LocalAudioLinkTakeover
             Array.Clear(buffer, offset, count);
 
             // read a much data as we can, the rest will be filled with zeroes
-            lock (input)
+            lock (this.inputLock)
             {
-                if (input != null)
+                if (this.input != null)
                 {
                     byte[] readBuffer = new byte[count * 4];
-                    int bytesRead = input.Read(readBuffer, 0, count * 4);
+                    int bytesRead = this.input.Read(readBuffer, 0, count * 4);
 
                     fixed (byte* p = readBuffer)
                     {
-                        float* value = (float*)p;
+                        float* bufferAsFloat = (float*)p;
                         for (int i = 0; i < bytesRead/4; i++)
                         {
-                            buffer[i] = *(value + i);
+                            float value = *(bufferAsFloat + i);
+                            float boosted = value * currentBoost;
+
+                            if (Math.Abs(boosted) > 1.0f)
+                            {
+                                currentBoost = Math.Max(MinBoost, 1.0f / Math.Abs(value)); // bring boost down to be _just_ at the max
+                                value = Math.Sign(value) * 1.0f;
+                                samplesSinceLastClip = 0;
+                            }
+                            else
+                            {
+                                samplesSinceLastClip++;
+                            }
+
+                            buffer[i] = boosted;
                         }
                     }
+
+                    if (samplesSinceLastClip > 48000) // increase boost once a second if we have not clipped since
+                    {
+                        currentBoost = Math.Min(MaxBoost, currentBoost + BoostIncreaseSpeed);
+                        samplesSinceLastClip -= 48000;
+                    }
+
+                    LoggerInstance.Msg(currentBoost + " : " + samplesSinceLastClip);
                 }
             }
 
