@@ -15,6 +15,7 @@ namespace LocalAudioLinkTakeover
     {
         private AudioSource attachedAudioSource = null;
         private AudioSource backupAudioSource = null;
+        private GameObject audioSourceContainer = null;
         private AudioInjectionFilter audioInjectionFilter = null;
         private VRC.Udon.UdonBehaviour audioLinkBehavior = null;
         private bool audioLinkTakenOver = false;
@@ -37,8 +38,22 @@ namespace LocalAudioLinkTakeover
 
             this.outputWaveProvider = new PassthroughWaveProvider();
 
+            MelonPreferences.CreateCategory("LocalAudioLinkTakeover", "Audio Link Takeover");
+            MelonPreferences.CreateEntry<float>("LocalAudioLinkTakeover", "MinBoost", this.outputWaveProvider.MinBoost, "Minimum Boost");
+            MelonPreferences.CreateEntry<float>("LocalAudioLinkTakeover", "MaxBoost", this.outputWaveProvider.MaxBoost, "Maximum Boost");
+            MelonPreferences.CreateEntry<float>("LocalAudioLinkTakeover", "BoostSpeed", this.outputWaveProvider.BoostIncreaseSpeed, "Boost increase per second");
+
             this.quickMenuSettings.MenuInteractionEvent += OnMenuInteraction;
             this.quickMenuSettings.Init();
+
+            OnPreferencesSaved();
+        }
+
+        public override void OnPreferencesSaved()
+        {
+            this.outputWaveProvider.MinBoost = MelonPreferences.GetEntryValue<float>("LocalAudioLinkTakeover", "MinBoost");
+            this.outputWaveProvider.MaxBoost = MelonPreferences.GetEntryValue<float>("LocalAudioLinkTakeover", "MaxBoost");
+            this.outputWaveProvider.BoostIncreaseSpeed = MelonPreferences.GetEntryValue<float>("LocalAudioLinkTakeover", "BoostSpeed");
         }
 
         public void OnMenuInteraction(object sender, EventArgs args)
@@ -49,7 +64,7 @@ namespace LocalAudioLinkTakeover
             {
                 case MenuInteractionEventArgs.MenuInteractionType.DISABLE_AUDIOLINK:
                     DisableCapture();
-                    EnableTakeover(false);
+                    EnableTakeover(true); // enable filter but it will only feed in zeroes
                     break;
                 case MenuInteractionEventArgs.MenuInteractionType.RELEASE_TAKEOVER:
                     DisableCapture();
@@ -98,30 +113,38 @@ namespace LocalAudioLinkTakeover
                 this.cs_recorder = null;
             }
 
+            int channels = 2;
+
             if (input) // if this is an input device use the normal Wasapi capture
             {
-                this.cs_captureDevice = new CSCore.SoundIn.WasapiCapture(true, CSCore.CoreAudioAPI.AudioClientShareMode.Shared, 15, new WaveFormat(48000, 32, 2, AudioEncoding.IeeeFloat));
+                // create an audio client to query the format this input device wants
+                var tempAudioClient = CSCore.CoreAudioAPI.AudioClient.FromMMDevice(device);
+                var bestFormat = tempAudioClient.MixFormat;
+
+                channels = bestFormat.Channels;
+
+                this.cs_captureDevice = new CSCore.SoundIn.WasapiCapture(true, CSCore.CoreAudioAPI.AudioClientShareMode.Shared, 15, new WaveFormat(48000, 32, channels, AudioEncoding.IeeeFloat));
             }
             else // otherwise use the loopback capture
             {
                 this.cs_captureDevice = new CSCore.SoundIn.WasapiLoopbackCapture(5, new WaveFormat(48000, 32, 2, AudioEncoding.IeeeFloat));
             }
 
-            LoggerInstance.Msg("channels: " + this.cs_captureDevice.WaveFormat.Channels);
-
             this.cs_captureDevice.Device = device;
             this.cs_captureDevice.Initialize();
 
-            this.cs_recorder = new CSCore.Streams.SoundInSource(this.cs_captureDevice, 2048*2*32/8);
+            this.cs_recorder = new CSCore.Streams.SoundInSource(this.cs_captureDevice, 2048 * channels * 32/8);
 
             this.cs_captureDevice.Start();
             this.outputWaveProvider.SetInput(this.cs_recorder);
+            this.outputWaveProvider.Format = this.cs_captureDevice.WaveFormat;
         }
 
         public override void OnSceneWasLoaded(int buildIndex, string sceneName)
         {
             this.foundAudioLink = false;
             this.audioLinkTakenOver = false;
+            this.audioSourceContainer = null;
 
             var udonBehaviors = UnityEngine.Object.FindObjectsOfType<VRC.Udon.UdonBehaviour>();
 
@@ -132,17 +155,20 @@ namespace LocalAudioLinkTakeover
                     LoggerInstance.Msg("Found AudioLink behavior");
                     this.foundAudioLink = true;
 
-                    //var variableNames = udonBehavior.publicVariables.VariableSymbols.Cast<Il2CppSystem.Collections.Generic.Dictionary<string, VRC.Udon.Common.Interfaces.IUdonVariable>.KeyCollection>();
+                    this.audioSourceContainer = new GameObject("Audio Injector");
 
                     this.audioLinkBehavior = udonBehavior;
 
-                    this.attachedAudioSource = udonBehavior.gameObject.AddComponent<AudioSource>();
-                    //this.attachedAudioSource.volume = 0.001f;
+                    this.attachedAudioSource = this.audioSourceContainer.AddComponent<AudioSource>();
+                    this.attachedAudioSource.volume = 0.001f;
                     this.attachedAudioSource.enabled = false;
 
-                    this.audioInjectionFilter = udonBehavior.gameObject.AddComponent<AudioInjectionFilter>();
+                    this.audioInjectionFilter = this.audioSourceContainer.AddComponent<AudioInjectionFilter>();
                     this.audioInjectionFilter.enabled = false;
                     this.audioInjectionFilter.SetInputProvider(this.outputWaveProvider);
+
+                    // add as a child of the audiolink object
+                    this.audioSourceContainer.transform.parent = udonBehavior.gameObject.transform;
 
                     break;
                 }
@@ -157,6 +183,7 @@ namespace LocalAudioLinkTakeover
             this.audioInjectionFilter = null;
             this.audioLinkBehavior = null;
             this.backupAudioSource = null;
+            this.audioSourceContainer = null;
 
             this.foundAudioLink = false;
             this.audioLinkTakenOver = false;
@@ -168,50 +195,40 @@ namespace LocalAudioLinkTakeover
 
             if (this.backupAudioSource == null) return;
 
-            //bool success = this.audioLinkBehavior.publicVariables.TrySetVariableValue<AudioSource>("audioSource", this.backupAudioSource);
-            //LoggerInstance.Msg(success ? "Successfully restored AudioLink's AudioSource" : "Could not restore AudioLink's AudioSource");
+            try
+            {
+                this.audioLinkBehavior.SetProgramVariable<AudioSource>("audioSource", this.backupAudioSource);
 
-            this.audioLinkBehavior.SetProgramVariable<AudioSource>("audioSource", this.backupAudioSource);
+                this.attachedAudioSource.enabled = false;
+                this.audioInjectionFilter.enabled = false;
 
-            this.attachedAudioSource.enabled = false;
-            this.audioInjectionFilter.enabled = false;
-
-            this.audioLinkTakenOver = false;
+                this.audioLinkTakenOver = false;
+            } catch (Exception ex)
+            {
+                LoggerInstance.Error("Error while releasing AudioLink: " + ex.ToString());
+            }
         }
 
         private void EnableTakeover(bool enableFilter = false)
         {
             if (this.audioLinkTakenOver || !this.foundAudioLink) return;
 
-            //this.audioLinkBehavior.publicVariables.
+            try
+            {
+                this.backupAudioSource = this.audioLinkBehavior.GetProgramVariable("audioSource").Cast<AudioSource>();
+            } catch (Exception ex) { }
 
-            //Il2CppSystem.Object _backupAudioSource;
-            //bool success = this.audioLinkBehavior.publicVariables.TryGetVariableValue("audioSource", out _backupAudioSource);
-            //this.backupAudioSource = _backupAudioSource.Cast<AudioSource>();
-            //LoggerInstance.Msg(success ? "Successfully backed up original AudioSource" : "Failed to back up the original AudioSource");
+            try
+            {
+                this.audioLinkBehavior.SetProgramVariable<AudioSource>("audioSource", this.attachedAudioSource);
 
-            //Il2CppSystem.Type _type;
-            //this.audioLinkBehavior.publicVariables.TryGetVariableType("audioSource", out _type);
+                this.attachedAudioSource.enabled = true;
+                this.audioInjectionFilter.enabled = enableFilter;
 
-            //_backupAudioSource.Unbox<AudioSource>();
-
-            //LoggerInstance.Msg("type: " + _type.FormatTypeName());
-
-            //this.audioLinkBehavior.publicVariables.TryGetVariableValue()
-
-            //var varType = this.audioLinkBehavior.GetProgramVariableType("audioSource");
-            this.backupAudioSource = this.audioLinkBehavior.GetProgramVariable("audioSource").Cast<AudioSource>();
-            //this.backupAudioSource = previousAudioSource.Unbox<varType>();
-
-
-            //success = this.audioLinkBehavior.publicVariables.TrySetVariableValue<AudioSource>("audioSource", this.attachedAudioSource);
-            this.audioLinkBehavior.SetProgramVariable<AudioSource>("audioSource", this.attachedAudioSource);
-            //LoggerInstance.Msg(success ? "Successfully added AudioSource to AudioLink" : "Could not set AudioLink's AudioSource");
-
-            this.attachedAudioSource.enabled = true;
-            this.audioInjectionFilter.enabled = enableFilter;
-
-            this.audioLinkTakenOver = true;
+                this.audioLinkTakenOver = true;
+            } catch (Exception ex) { 
+                LoggerInstance.Error("Error while taking over AudioLink: " + ex.ToString());
+            }
         }
     }
 }

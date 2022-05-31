@@ -35,7 +35,7 @@ namespace LocalAudioLinkTakeover
         unsafe public void OnAudioFilterRead(Il2CppStructArray<float> data, int channels)
         {
             float[] readBuffer = new float[data.Length];
-            int readSamples = this.waveProvider.Read(readBuffer, 0, data.Length);
+            int readSamples = this.waveProvider.Read(readBuffer, data.Length, channels);
 
             for (int i = 0; i < readSamples; i++)
             {

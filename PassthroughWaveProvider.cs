@@ -8,12 +8,10 @@ using MelonLoader;
 
 namespace LocalAudioLinkTakeover
 {
-    internal class PassthroughWaveProvider : IReadableAudioSource<float>
+    internal class PassthroughWaveProvider
     {
         private MelonLogger.Instance LoggerInstance = new MelonLogger.Instance("Local_AudioLink_Takeover::PassthroughWaveProvider");
 
-        private WaveFormat waveFormat;
-        private int bytesPerSample;
         private IReadableAudioSource<byte> input = null;
         private object inputLock = new object();
 
@@ -23,11 +21,10 @@ namespace LocalAudioLinkTakeover
         public float MaxBoost { get; set; } = 15.0f;
         public float MinBoost { get; set; } = 1.0f;
         public float BoostIncreaseSpeed { get; set; } = 0.3f;
+        public WaveFormat Format { get; set; } = new WaveFormat(48000, 32, 2, AudioEncoding.IeeeFloat);
 
         public PassthroughWaveProvider()
         {
-            this.waveFormat = new WaveFormat(48000, 32, 2, AudioEncoding.IeeeFloat);
-            this.bytesPerSample = 4;
         }
 
         public void SetInput(IReadableAudioSource<byte> input)
@@ -35,6 +32,7 @@ namespace LocalAudioLinkTakeover
             lock(this.inputLock)
             {
                 this.input = input;
+                this.currentBoost = MinBoost + (MaxBoost - MinBoost) / 2.0f;
             }
         }
 
@@ -46,69 +44,55 @@ namespace LocalAudioLinkTakeover
             }
         }
 
-        unsafe public int Read(float[] buffer, int offset, int count)
+        unsafe public int Read(float[] buffer, int count, int channels)
         {
             // blank the buffer
-            Array.Clear(buffer, offset, count);
+            Array.Clear(buffer, 0, count);
+
+            int readCount = count / channels * Format.Channels;
 
             // read a much data as we can, the rest will be filled with zeroes
             lock (this.inputLock)
             {
                 if (this.input != null)
                 {
-                    byte[] readBuffer = new byte[count * 4];
-                    int bytesRead = this.input.Read(readBuffer, 0, count * 4);
+                    byte[] readBuffer = new byte[readCount * 4];
+                    int bytesRead = this.input.Read(readBuffer, 0, readCount * 4);
 
                     fixed (byte* p = readBuffer)
                     {
                         float* bufferAsFloat = (float*)p;
-                        for (int i = 0; i < bytesRead/4; i++)
+                        for (int i = 0; i < bytesRead/4; i += Format.Channels)
                         {
-                            float value = *(bufferAsFloat + i);
-                            float boosted = value * currentBoost;
-
-                            if (Math.Abs(boosted) > 1.0f)
+                            for (int c = 0; c < channels; c++)
                             {
-                                currentBoost = Math.Max(MinBoost, 1.0f / Math.Abs(value)); // bring boost down to be _just_ at the max
-                                value = Math.Sign(value) * 1.0f;
-                                samplesSinceLastClip = 0;
-                            }
-                            else
-                            {
-                                samplesSinceLastClip++;
-                            }
+                                float value = *(bufferAsFloat + i + Math.Min(c, Format.Channels-1)); // fill the remaining channels with data from the highest channel (not ideal but shouldn't cause problems in this instance)
+                                float boosted = value * currentBoost;
 
-                            buffer[i] = boosted;
+                                if (Math.Abs(boosted) > 1.0f)
+                                {
+                                    currentBoost = Math.Max(MinBoost, 1.0f / Math.Abs(value)); // bring boost down to be _just_ at the max
+                                    value = Math.Sign(value) * 1.0f;
+                                    samplesSinceLastClip = 0;
+                                }
+                                else
+                                {
+                                    samplesSinceLastClip++;
+                                }
+
+                                buffer[i * channels / Format.Channels + c] = boosted;
+                            }
                         }
                     }
 
-                    if (samplesSinceLastClip > 48000) // increase boost once a second if we have not clipped since
-                    {
-                        currentBoost = Math.Min(MaxBoost, currentBoost + BoostIncreaseSpeed);
-                        samplesSinceLastClip -= 48000;
-                    }
+                    currentBoost = Math.Min(MaxBoost, currentBoost + BoostIncreaseSpeed * ((float)samplesSinceLastClip / 48000.0f));
+                    samplesSinceLastClip = 0;
 
-                    LoggerInstance.Msg(currentBoost + " : " + samplesSinceLastClip);
+                    //LoggerInstance.Msg(currentBoost + " : " + samplesSinceLastClip);
                 }
             }
 
             return count;
         }
-
-        public void Dispose()
-        {
-            // do nothing
-        }
-
-        public WaveFormat WaveFormat
-        {
-            get { return this.waveFormat; }
-        }
-
-        public bool CanSeek => false;
-
-        public long Position { get => 0; set { } }
-
-        public long Length => 0;
     }
 }
